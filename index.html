@@ -1,1 +1,764 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>العد التنازلي الأخير - Eye Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@200;400;700;900&family=Reem+Kufi+Fun:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+<style>
+  :root {
+    --glass-bg:rgba(255,255,255,0.04);--glass-border:rgba(255,255,255,0.08);
+    --glass-blur:40px;--blood:#a80000;--blood-glow:rgba(168,0,0,0.5);
+    --blood-bright:#e00000;--bone:#e8ddd0;--bone-dim:rgba(232,221,208,0.5);
+    --dark:#080608;--green:rgba(0,200,80,0.8);--green-dim:rgba(0,200,80,0.3);
+    --accent:rgba(255,80,80,0.9);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Tajawal',sans-serif;background:var(--dark);color:var(--bone);min-height:100vh;overflow-x:hidden;position:relative;}
 
+  .liquid-bg{position:fixed;inset:0;z-index:0;overflow:hidden;}
+  .liquid-orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:0.4;animation:orbFloat 20s ease-in-out infinite;}
+  .liquid-orb:nth-child(1){width:400px;height:400px;background:radial-gradient(circle,rgba(140,0,0,0.5),rgba(80,0,0,0.2),transparent);top:-10%;right:-10%;animation-duration:18s;}
+  .liquid-orb:nth-child(2){width:300px;height:300px;background:radial-gradient(circle,rgba(100,0,0,0.4),rgba(50,0,20,0.2),transparent);bottom:10%;left:-5%;animation-duration:22s;animation-delay:-5s;}
+  .liquid-orb:nth-child(3){width:250px;height:250px;background:radial-gradient(circle,rgba(80,0,30,0.3),rgba(30,0,40,0.15),transparent);top:40%;left:50%;animation-duration:25s;animation-delay:-10s;}
+  @keyframes orbFloat{0%,100%{transform:translate(0,0) scale(1);}25%{transform:translate(40px,-30px) scale(1.1);}50%{transform:translate(-20px,50px) scale(0.95);}75%{transform:translate(30px,20px) scale(1.05);}}
+
+  .vignette{position:fixed;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at center,transparent 40%,rgba(0,0,0,0.6) 100%);}
+
+  .glass{background:var(--glass-bg);backdrop-filter:blur(var(--glass-blur)) saturate(1.2);-webkit-backdrop-filter:blur(var(--glass-blur)) saturate(1.2);border:1px solid var(--glass-border);position:relative;overflow:hidden;}
+  .glass::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,0.06) 0%,transparent 40%,transparent 60%,rgba(255,255,255,0.03) 100%);pointer-events:none;}
+  .glass::after{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.15),transparent);pointer-events:none;}
+
+  .app-container{position:relative;z-index:2;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px 16px;}
+
+  .screen{display:none;flex-direction:column;align-items:center;width:100%;max-width:440px;gap:16px;}
+  .screen.active{display:flex;}
+
+  /* === مؤشر العين === */
+  #eyeCursor{
+    position:fixed;width:28px;height:28px;border-radius:50%;pointer-events:none;z-index:10000;
+    border:2px solid var(--blood);box-shadow:0 0 20px var(--blood-glow),0 0 40px rgba(168,0,0,0.2);
+    transform:translate(-50%,-50%);transition:width 0.2s,height 0.2s,border-color 0.2s,box-shadow 0.2s;
+    display:none;
+  }
+  #eyeCursor.blink-click{
+    width:50px;height:50px;border-color:var(--accent);
+    box-shadow:0 0 40px rgba(255,80,80,0.6),0 0 80px rgba(255,80,80,0.3);
+  }
+  #eyeCursorInner{
+    position:absolute;inset:6px;border-radius:50%;
+    background:radial-gradient(circle,rgba(168,0,0,0.4),transparent);
+    animation:cursorPulse 2s ease-in-out infinite;
+  }
+  @keyframes cursorPulse{0%,100%{opacity:0.4;transform:scale(1);}50%{opacity:0.8;transform:scale(1.2);}}
+
+  /* === العناصر القابلة للنظر === */
+  .gaze-btn{
+    position:relative;padding:16px 32px;border:1px solid rgba(168,0,0,0.3);border-radius:18px;
+    color:var(--bone);font-family:'Reem Kufi Fun',sans-serif;font-size:18px;font-weight:700;
+    cursor:pointer;overflow:hidden;transition:all 0.4s cubic-bezier(0.4,0,0.2,1);
+    background:rgba(168,0,0,0.12);backdrop-filter:blur(20px);
+    box-shadow:0 8px 32px rgba(168,0,0,0.15),inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .gaze-btn::before{content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.06),transparent);transition:left 0.6s ease;}
+  .gaze-btn:hover::before{left:100%;}
+  .gaze-btn:hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(168,0,0,0.25);border-color:rgba(168,0,0,0.5);background:rgba(168,0,0,0.18);}
+  .gaze-btn:active{transform:translateY(0) scale(0.98);}
+
+  /* شريط تقدم النظر */
+  .gaze-progress{
+    position:absolute;bottom:0;right:0;height:3px;width:0%;
+    background:linear-gradient(90deg,var(--blood-bright),var(--blood));
+    border-radius:0 0 18px 18px;transition:width 0.05s linear;
+  }
+  .gaze-btn.gazing .gaze-progress{width:var(--gaze-progress,0%);}
+
+  /* حقل الإدخال بالعين */
+  .gaze-input{
+    width:100%;padding:14px 18px;background:rgba(255,255,255,0.03);backdrop-filter:blur(20px);
+    border:1px solid rgba(255,255,255,0.06);border-radius:16px;color:var(--bone);
+    font-family:'Tajawal',sans-serif;font-size:16px;outline:none;
+    transition:all 0.4s cubic-bezier(0.4,0,0.2,1);box-shadow:inset 0 2px 8px rgba(0,0,0,0.2);
+    position:relative;
+  }
+  .gaze-input:focus{border-color:rgba(168,0,0,0.4);box-shadow:inset 0 2px 8px rgba(0,0,0,0.2),0 0 30px rgba(168,0,0,0.1);background:rgba(255,255,255,0.05);}
+  .gaze-input::placeholder{color:rgba(232,221,208,0.2);}
+  .gaze-input::-webkit-calendar-picker-indicator{filter:invert(0.7) sepia(1) hue-rotate(-30deg);cursor:pointer;}
+
+  /* === كاميرا الخلفية المصغرة === */
+  .mini-cam{
+    position:fixed;top:16px;left:16px;width:180px;height:135px;border-radius:16px;
+    overflow:hidden;border:1px solid rgba(168,0,0,0.2);z-index:100;
+    box-shadow:0 8px 30px rgba(0,0,0,0.5);transition:transform 0.3s ease,opacity 0.3s ease;
+  }
+  .mini-cam.hidden{transform:scale(0);opacity:0;pointer-events:none;}
+  .mini-cam video{width:100%;height:100%;object-fit:cover;}
+  .mini-cam canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}
+  .mini-cam-label{
+    position:absolute;bottom:0;left:0;right:0;padding:4px 8px;
+    background:rgba(0,0,0,0.7);font-size:10px;color:var(--blood);
+    text-align:center;letter-spacing:2px;
+  }
+
+  /* === أداة التحكم === */
+  .controls-bar{
+    position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:100;
+    display:flex;gap:8px;padding:8px 12px;border-radius:20px;
+    background:rgba(10,8,10,0.8);backdrop-filter:blur(20px);
+    border:1px solid rgba(255,255,255,0.05);
+  }
+  .ctrl-btn{
+    width:40px;height:40px;border-radius:12px;border:1px solid rgba(255,255,255,0.06);
+    background:rgba(255,255,255,0.03);color:var(--bone-dim);font-size:14px;
+    cursor:pointer;transition:all 0.3s ease;display:flex;align-items:center;justify-content:center;
+  }
+  .ctrl-btn:hover{border-color:rgba(168,0,0,0.3);color:var(--bone);}
+  .ctrl-btn.active-ctrl{border-color:rgba(168,0,0,0.4);color:var(--blood);background:rgba(168,0,0,0.1);}
+
+  /* === شاشة الإدخال === */
+  .input-card{border-radius:28px;padding:28px 22px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.4),0 0 80px rgba(168,0,0,0.06),inset 0 1px 0 rgba(255,255,255,0.05);}
+  .warning-text{text-align:center;font-size:13px;color:rgba(168,0,0,0.7);margin-bottom:24px;line-height:2;}
+  .warning-text i{display:block;font-size:16px;margin-bottom:8px;color:var(--blood);}
+  .form-group{margin-bottom:18px;}
+  .form-group label{display:block;font-size:13px;color:var(--bone-dim);letter-spacing:1px;margin-bottom:8px;font-weight:700;}
+  .form-group label i{margin-left:6px;color:var(--blood);font-size:12px;}
+
+  /* لوحة المفاتيح العينية */
+  .eye-keyboard{
+    display:none;flex-direction:column;gap:6px;width:100%;margin-top:12px;
+    animation:fadeInUp 0.4s ease;
+  }
+  .eye-keyboard.active{display:flex;}
+  .kb-row{display:flex;gap:4px;justify-content:center;}
+  .kb-key{
+    min-width:32px;height:38px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);
+    background:rgba(255,255,255,0.03);color:var(--bone-dim);font-family:'Tajawal',sans-serif;
+    font-size:14px;cursor:pointer;transition:all 0.3s ease;
+    display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;
+  }
+  .kb-key:hover{border-color:rgba(168,0,0,0.3);color:var(--bone);}
+  .kb-key .gaze-progress{border-radius:0 0 10px 10px;}
+
+  .app-header{text-align:center;margin-bottom:8px;animation:fadeInDown 1s ease;}
+  .app-header h1{font-family:'Reem Kufi Fun',sans-serif;font-size:clamp(28px,7vw,42px);font-weight:700;color:var(--bone);text-shadow:0 0 40px var(--blood-glow);line-height:1.3;}
+  .app-header .subtitle{font-size:12px;color:var(--bone-dim);margin-top:4px;font-weight:200;letter-spacing:3px;}
+
+  .skull-orb{width:60px;height:60px;border-radius:50%;margin:0 auto 12px;display:flex;align-items:center;justify-content:center;background:rgba(168,0,0,0.08);backdrop-filter:blur(30px);border:1px solid rgba(168,0,0,0.2);box-shadow:0 0 40px rgba(168,0,0,0.15);animation:skullBreath 4s ease-in-out infinite;position:relative;}
+  .skull-orb::before{content:'';position:absolute;inset:-2px;border-radius:50%;background:conic-gradient(from 0deg,transparent,rgba(168,0,0,0.3),transparent,rgba(168,0,0,0.15),transparent);animation:orbRotate 8s linear infinite;z-index:-1;filter:blur(4px);}
+  @keyframes orbRotate{to{transform:rotate(360deg);}}
+  @keyframes skullBreath{0%,100%{transform:scale(1);}50%{transform:scale(1.06);}}
+  .skull-orb i{font-size:24px;color:var(--blood);filter:drop-shadow(0 0 12px var(--blood-glow));}
+
+  /* === تحليل الوجه === */
+  .face-display-container{position:relative;width:280px;height:340px;border-radius:24px;}
+  #faceResultCanvas{width:100%;height:100%;border-radius:24px;}
+  .analysis-data{width:100%;display:flex;flex-direction:column;gap:6px;}
+  .data-row{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-radius:10px;font-size:12px;}
+  .data-row .data-label{color:var(--bone-dim);}
+  .data-row .data-value{color:var(--blood);font-weight:700;}
+  .data-row .data-value.green-val{color:var(--green);}
+
+  /* === التحميل === */
+  .loading-screen{gap:24px;justify-content:center;min-height:50vh;}
+  .loading-orb{width:90px;height:90px;border-radius:50%;background:rgba(168,0,0,0.06);backdrop-filter:blur(30px);border:1px solid rgba(168,0,0,0.15);display:flex;align-items:center;justify-content:center;position:relative;animation:loadPulse 2s ease-in-out infinite;}
+  .loading-orb::before{content:'';position:absolute;inset:-3px;border-radius:50%;border:2px solid transparent;border-top-color:var(--blood);border-right-color:rgba(168,0,0,0.3);animation:orbRotate 2s linear infinite;}
+  .loading-orb i{font-size:24px;color:var(--blood);filter:drop-shadow(0 0 15px var(--blood-glow));animation:loadIconSpin 4s linear infinite;}
+  @keyframes loadPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.08);}}
+  @keyframes loadIconSpin{to{transform:rotate(360deg);}}
+  .loading-bar-track{width:200px;height:3px;background:rgba(255,255,255,0.05);border-radius:10px;overflow:hidden;}
+  .loading-bar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--blood),rgba(168,0,0,0.4));border-radius:10px;transition:width 0.4s ease;}
+
+  /* === النتيجة === */
+  .result-screen{gap:16px;}
+  .result-icon-container{width:80px;height:80px;border-radius:50%;background:rgba(168,0,0,0.08);backdrop-filter:blur(30px);border:1px solid rgba(168,0,0,0.2);display:flex;align-items:center;justify-content:center;animation:iconReveal 1.2s cubic-bezier(0.34,1.56,0.64,1) both;box-shadow:0 0 60px rgba(168,0,0,0.2);position:relative;}
+  .result-icon-container::before{content:'';position:absolute;inset:-4px;border-radius:50%;background:conic-gradient(from 0deg,transparent 30%,rgba(168,0,0,0.4) 50%,transparent 70%);animation:orbRotate 6s linear infinite;filter:blur(3px);}
+  .result-icon-container i{font-size:32px;color:var(--blood);filter:drop-shadow(0 0 20px var(--blood-glow));}
+  @keyframes iconReveal{0%{transform:scale(0) rotate(-180deg);opacity:0;}60%{transform:scale(1.15) rotate(10deg);opacity:1;}100%{transform:scale(1) rotate(0deg);}}
+
+  .result-name{font-family:'Reem Kufi Fun',sans-serif;font-size:24px;font-weight:700;color:var(--bone);animation:fadeInUp 0.8s ease 0.3s both;}
+  .result-label{font-size:12px;color:var(--bone-dim);letter-spacing:3px;font-weight:200;animation:fadeInUp 0.8s ease 0.4s both;}
+  .death-date-glass{border-radius:20px;padding:24px 30px;text-align:center;width:100%;animation:fadeInUp 0.8s ease 0.5s both;box-shadow:0 16px 50px rgba(0,0,0,0.3),0 0 80px rgba(168,0,0,0.08);}
+  .death-date-glass .date-text{font-family:'Reem Kufi Fun',sans-serif;font-size:clamp(24px,6vw,34px);font-weight:700;color:var(--blood);text-shadow:0 0 30px var(--blood-glow);position:relative;z-index:1;}
+  .countdown-row{display:flex;gap:10px;width:100%;animation:fadeInUp 0.8s ease 0.6s both;}
+  .countdown-unit{flex:1;border-radius:14px;padding:12px 6px;text-align:center;}
+  .countdown-unit .num{font-family:'Reem Kufi Fun',sans-serif;font-size:24px;font-weight:700;color:var(--blood);text-shadow:0 0 15px var(--blood-glow);display:block;}
+  .countdown-unit .lbl{font-size:10px;color:var(--bone-dim);margin-top:2px;display:block;letter-spacing:1px;}
+  .creepy-msg{font-size:12px;color:rgba(168,0,0,0.6);line-height:2;font-style:italic;text-align:center;animation:fadeInUp 0.8s ease 0.7s both;padding:0 8px;}
+
+  .flash-overlay{position:fixed;inset:0;background:radial-gradient(circle at center,rgba(168,0,0,0.4),transparent);z-index:999;pointer-events:none;opacity:0;transition:opacity 0.15s;}
+  .flash-overlay.active{opacity:1;}
+  @keyframes screenShake{0%,100%{transform:translate(0);}20%{transform:translate(-3px,2px);}40%{transform:translate(3px,-2px);}60%{transform:translate(-2px,-3px);}80%{transform:translate(2px,3px);}}
+  .shake{animation:screenShake 0.5s ease;}
+
+  .toast-glass{position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(-120px);background:rgba(168,0,0,0.12);backdrop-filter:blur(30px);border:1px solid rgba(168,0,0,0.25);border-radius:16px;padding:10px 20px;font-size:13px;color:var(--bone);z-index:1000;transition:transform 0.5s cubic-bezier(0.34,1.56,0.64,1);text-align:center;max-width:90%;}
+  .toast-glass.show{transform:translateX(-50%) translateY(0);}
+
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+  @keyframes fadeInDown{from{opacity:0;transform:translateY(-24px);}to{opacity:1;transform:translateY(0);}}
+  @keyframes fadeInUp{from{opacity:0;transform:translateY(24px);}to{opacity:1;transform:translateY(0);}}
+
+  .particle{position:fixed;width:2px;height:2px;background:rgba(168,0,0,0.4);border-radius:50%;pointer-events:none;z-index:1;animation:particleDrift linear infinite;}
+  @keyframes particleDrift{0%{transform:translateY(100vh) translateX(0);opacity:0;}10%{opacity:0.6;}90%{opacity:0.3;}100%{transform:translateY(-10vh) translateX(30px);opacity:0;}}
+
+  /* تلميح الرمش */
+  .blink-hint{
+    position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:100;
+    padding:8px 16px;border-radius:12px;background:rgba(10,8,10,0.8);
+    backdrop-filter:blur(20px);border:1px solid rgba(168,0,0,0.15);
+    font-size:11px;color:var(--bone-dim);text-align:center;
+    animation:fadeInUp 0.5s ease;pointer-events:none;
+  }
+  .blink-hint i{color:var(--blood);margin-left:4px;}
+
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms!important;transition-duration:0.01ms!important;}}
+  @media(max-width:440px){.input-card{padding:24px 16px;}.face-display-container{width:240px;height:290px;}.mini-cam{width:140px;height:105px;}}
+</style>
+</head>
+<body>
+
+<div class="liquid-bg"><div class="liquid-orb"></div><div class="liquid-orb"></div><div class="liquid-orb"></div></div>
+<div class="vignette"></div>
+<div class="flash-overlay" id="flashOverlay"></div>
+<div class="toast-glass" id="toast"></div>
+
+<!-- مؤشر العين -->
+<div id="eyeCursor"><div id="eyeCursorInner"></div></div>
+
+<!-- كاميرا مصغرة -->
+<div class="mini-cam" id="miniCam">
+  <video id="webcam" autoplay playsinline></video>
+  <canvas id="miniCamCanvas"></canvas>
+  <div class="mini-cam-label">EYE TRACKING</div>
+</div>
+
+<!-- أداة التحكم -->
+<div class="controls-bar">
+  <button class="ctrl-btn active-ctrl" id="btnMirror" onclick="toggleMirror()" title="انعكاس الكاميرا"><i class="fas fa-arrows-left-right"></i></button>
+  <button class="ctrl-btn" id="btnCamToggle" onclick="toggleMiniCam()" title="إظهار/إخفاء الكاميرا"><i class="fas fa-video"></i></button>
+  <button class="ctrl-btn" id="btnCalibrate" onclick="calibrate()" title="معايرة"><i class="fas fa-crosshairs"></i></button>
+</div>
+
+<div class="app-container" id="appContainer">
+
+  <!-- 1. شاشة الإدخال -->
+  <section class="screen active" id="inputScreen">
+    <header class="app-header">
+      <div class="skull-orb"><i class="fas fa-skull"></i></div>
+      <h1>العد التنازلي الأخير</h1>
+      <p class="subtitle">تحكم بعينيك • رمش للاختيار</p>
+    </header>
+    <div class="input-card glass">
+      <p class="warning-text"><i class="fas fa-triangle-exclamation"></i>تحذير: تحكم بعينيك. انظر للزر ورمش للاختيار.</p>
+      <div class="form-group">
+        <label><i class="fas fa-user"></i> اسمك الكامل</label>
+        <input type="text" class="gaze-input" id="nameInput" placeholder="انظر للوحدة المفاتيح ورمش..." readonly>
+      </div>
+      <!-- لوحة مفاتيح عينية -->
+      <div class="eye-keyboard" id="nameKeyboard">
+        <div class="kb-row">
+          <button class="kb-key" data-char="ا">ا</button><button class="kb-key" data-char="ب">ب</button>
+          <button class="kb-key" data-char="ت">ت</button><button class="kb-key" data-char="ث">ث</button>
+          <button class="kb-key" data-char="ج">ج</button><button class="kb-key" data-char="ح">ح</button>
+          <button class="kb-key" data-char="خ">خ</button>
+        </div>
+        <div class="kb-row">
+          <button class="kb-key" data-char="د">د</button><button class="kb-key" data-char="ذ">ذ</button>
+          <button class="kb-key" data-char="ر">ر</button><button class="kb-key" data-char="ز">ز</button>
+          <button class="kb-key" data-char="س">س</button><button class="kb-key" data-char="ش">ش</button>
+          <button class="kb-key" data-char="ص">ص</button>
+        </div>
+        <div class="kb-row">
+          <button class="kb-key" data-char="ض">ض</button><button class="kb-key" data-char="ط">ط</button>
+          <button class="kb-key" data-char="ظ">ظ</button><button class="kb-key" data-char="ع">ع</button>
+          <button class="kb-key" data-char="غ">غ</button><button class="kb-key" data-char="ف">ف</button>
+          <button class="kb-key" data-char="ق">ق</button>
+        </div>
+        <div class="kb-row">
+          <button class="kb-key" data-char="ك">ك</button><button class="kb-key" data-char="ل">ل</button>
+          <button class="kb-key" data-char="م">م</button><button class="kb-key" data-char="ن">ن</button>
+          <button class="kb-key" data-char="ه">ه</button><button class="kb-key" data-char="و">و</button>
+          <button class="kb-key" data-char="ي">ي</button>
+        </div>
+        <div class="kb-row">
+          <button class="kb-key" data-char=" " style="min-width:80px;font-size:11px;">مسافة</button>
+          <button class="kb-key" data-char="backspace" style="min-width:60px;font-size:11px;"><i class="fas fa-delete-left"></i></button>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label><i class="fas fa-calendar-days"></i> تاريخ ميلادك</label>
+        <input type="date" class="gaze-input" id="birthInput">
+      </div>
+      <button class="gaze-btn" style="width:100%;margin-top:8px;" onclick="startProcess()" data-action="start">
+        اكشف مصيري
+        <div class="gaze-progress"></div>
+      </button>
+    </div>
+  </section>
+
+  <!-- 2. شاشة تحليل الوجه -->
+  <section class="screen" id="analysisScreen">
+    <h2 style="font-family:'Reem Kufi Fun',sans-serif;font-size:20px;color:var(--blood);text-shadow:0 0 20px var(--blood-glow);"><i class="fas fa-fingerprint" style="margin-left:8px;"></i>تحليل الهوية</h2>
+    <div class="face-display-container glass"><canvas id="faceResultCanvas"></canvas></div>
+    <div class="analysis-data">
+      <div class="data-row glass"><span class="data-label">الحالة</span><span class="data-value green-val" id="dataStatus">تم التحقق</span></div>
+      <div class="data-row glass"><span class="data-label">نقاط التعرف</span><span class="data-value" id="dataPoints">478</span></div>
+      <div class="data-row glass"><span class="data-label">دقة التعرف</span><span class="data-value" id="dataConfidence">99.7%</span></div>
+    </div>
+    <button class="gaze-btn" style="width:100%;" onclick="goToLoading()" data-action="proceed">
+      اكشف مصيري الآن <i class="fas fa-arrow-left" style="margin-right:8px;"></i>
+      <div class="gaze-progress"></div>
+    </button>
+  </section>
+
+  <!-- 3. شاشة التحميل -->
+  <section class="screen loading-screen" id="loadingScreen">
+    <div class="loading-orb"><i class="fas fa-eye"></i></div>
+    <p class="face-status" id="loadingText" style="color:var(--bone-dim);">يتم استشارة الظلام</p>
+    <div class="loading-bar-track"><div class="loading-bar-fill" id="loadingBar"></div></div>
+  </section>
+
+  <!-- 4. شاشة النتيجة -->
+  <section class="screen result-screen" id="resultScreen">
+    <div class="result-icon-container"><i class="fas fa-skull-crossbones"></i></div>
+    <h2 class="result-name" id="resultName"></h2>
+    <p class="result-label">موعدك المحتوم</p>
+    <div class="death-date-glass glass"><div class="date-text" id="deathDateText"></div></div>
+    <div class="countdown-row" id="countdownRow"></div>
+    <p class="creepy-msg" id="creepyMsg"></p>
+    <button class="gaze-btn" onclick="resetApp()" data-action="retry">
+      جرّب مجدداً <i class="fas fa-rotate-left" style="margin-right:8px;"></i>
+      <div class="gaze-progress"></div>
+    </button>
+  </section>
+
+</div>
+
+<script>
+  const today=new Date();
+  document.getElementById('birthInput').max=today.toISOString().split('T')[0];
+
+  // جسيمات
+  (function(){for(let i=0;i<10;i++){const p=document.createElement('div');p.className='particle';p.style.left=Math.random()*100+'%';p.style.animationDuration=(8+Math.random()*12)+'s';p.style.animationDelay=(Math.random()*10)+'s';document.body.appendChild(p);}})();
+
+  // === أدوات ===
+  function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);}
+  function redFlash(){const f=document.getElementById('flashOverlay');f.classList.add('active');setTimeout(()=>f.classList.remove('active'),200);}
+  function shakeScreen(){const c=document.getElementById('appContainer');c.classList.add('shake');setTimeout(()=>c.classList.remove('shake'),500);}
+  function switchScreen(h,s){document.getElementById(h).classList.remove('active');document.getElementById(s).classList.add('active');currentScreen=s;}
+
+  // === متغيرات تتبع العين ===
+  let faceMeshInstance=null,cameraInstance=null;
+  let isMirrored=true; // الانعكاس الافتراضي
+  let eyeX=0.5,eyeY=0.5; // موقع العين المعياري (0-1)
+  let smoothX=window.innerWidth/2,smoothY=window.innerHeight/2;
+  let isBlinking=false,wasBlinking=false;
+  let lastBlinkTime=0;
+  let gazeTarget=null,gazeStartTime=0;
+  const GAZE_DURATION=1200; // مدة النظر للتنشيط (ms)
+  const BLINK_COOLDOWN=600;
+  let currentScreen='inputScreen';
+  let calibrationOffset={x:0,y:0};
+  let savedLandmarks=null;
+
+  const eyeCursor=document.getElementById('eyeCursor');
+
+  // === الانعكاس ===
+  function toggleMirror(){
+    isMirrored=!isMirrored;
+    const video=document.getElementById('webcam');
+    const canvas=document.getElementById('miniCamCanvas');
+    video.style.transform=isMirrored?'scaleX(-1)':'none';
+    canvas.style.transform=isMirrored?'scaleX(-1)':'none';
+    const btn=document.getElementById('btnMirror');
+    btn.classList.toggle('active-ctrl',isMirrored);
+    showToast(isMirrored?'تم تفعيل الانعكاس':'تم إلغاء الانعكاس');
+  }
+
+  function toggleMiniCam(){
+    const cam=document.getElementById('miniCam');
+    cam.classList.toggle('hidden');
+    const btn=document.getElementById('btnCamToggle');
+    btn.classList.toggle('active-ctrl',!cam.classList.contains('hidden'));
+  }
+
+  function calibrate(){
+    calibrationOffset.x=0;calibrationOffset.y=0;
+    showToast('وجّه نظرك لمركز الشاشة ورمش خلال 3 ثوانٍ');
+    setTimeout(()=>{
+      calibrationOffset.x=0.5-eyeX;
+      calibrationOffset.y=0.5-eyeY;
+      redFlash();showToast('تمت المعايرة');
+    },3000);
+  }
+
+  // === تحليل الرمش وموقع العين ===
+  function processFaceResults(results){
+    if(!results.multiFaceLandmarks||results.multiFaceLandmarks.length===0)return;
+    const lm=results.multiFaceLandmarks[0];
+    savedLandmarks=lm.map(p=>({x:p.x,y:p.y,z:p.z}));
+
+    // حساب مركز العينين
+    const leftEyeCenter={x:(lm[33].x+lm[133].x)/2,y:(lm[33].y+lm[133].y)/2};
+    const rightEyeCenter={x:(lm[362].x+lm[263].x)/2,y:(lm[362].y+lm[263].y)/2};
+    const eyeCenter={x:(leftEyeCenter.x+rightEyeCenter.x)/2,y:(leftEyeCenter.y+rightEyeCenter.y)/2};
+
+    // تطبيق الانعكاس
+    if(isMirrored){
+      eyeX=1-eyeCenter.x+calibrationOffset.x;
+    }else{
+      eyeX=eyeCenter.x+calibrationOffset.x;
+    }
+    eyeY=eyeCenter.y+calibrationOffset.y;
+    eyeX=Math.max(0,Math.min(1,eyeX));
+    eyeY=Math.max(0,Math.min(1,eyeY));
+
+    // كشف الرمش - حساب EAR (Eye Aspect Ratio)
+    function ear(eyeIndices){
+      const p=eyeIndices.map(i=>lm[i]);
+      const v1=Math.hypot(p[1].x-p[5].x,p[1].y-p[5].y);
+      const v2=Math.hypot(p[2].x-p[4].x,p[2].y-p[4].y);
+      const h=Math.hypot(p[0].x-p[3].x,p[0].y-p[3].y);
+      return h>0?(v1+v2)/(2*h):1;
+    }
+    const leftEAR=ear([33,160,158,133,153,144]);
+    const rightEAR=ear([362,385,387,263,373,380]);
+    const avgEAR=(leftEAR+rightEAR)/2;
+
+    wasBlinking=isBlinking;
+    isBlinking=avgEAR<0.18;
+
+    // كشف الرمش (إغلاق ثم فتح)
+    if(wasBlinking&&!isBlinking&&(Date.now()-lastBlinkTime>BLINK_COOLDOWN)){
+      lastBlinkTime=Date.now();
+      handleBlink();
+    }
+
+    // رسم على الكاميرا المصغرة
+    drawMiniCamOverlay(lm);
+  }
+
+  // رسم تراكب على الكاميرا المصغرة
+  function drawMiniCamOverlay(lm){
+    const canvas=document.getElementById('miniCamCanvas');
+    const ctx=canvas.getContext('2d');
+    const video=document.getElementById('webcam');
+    if(video.videoWidth){
+      canvas.width=video.videoWidth;
+      canvas.height=video.videoHeight;
+    }
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // نقاط العينين
+    const eyePoints=[33,133,362,263,159,145,386,374];
+    ctx.fillStyle='rgba(0,200,80,0.6)';
+    eyePoints.forEach(i=>{
+      if(!lm[i])return;
+      ctx.beginPath();
+      ctx.arc(lm[i].x*canvas.width,lm[i].y*canvas.height,3,0,Math.PI*2);
+      ctx.fill();
+    });
+
+    // دائرة العين اليسرى
+    [33,246,161,160,159,158,157,173,133,155,154,153,145,144,163,7].forEach((_,idx,arr)=>{
+      if(idx===0)return;
+      const a=lm[arr[idx-1]],b=lm[arr[idx]];
+      if(!a||!b)return;
+      ctx.beginPath();ctx.moveTo(a.x*canvas.width,a.y*canvas.height);
+      ctx.lineTo(b.x*canvas.width,b.y*canvas.height);
+      ctx.strokeStyle='rgba(0,200,80,0.3)';ctx.lineWidth=1;ctx.stroke();
+    });
+    // دائرة العين اليمنى
+    [362,398,384,385,386,387,388,466,263,249,390,373,374,380,381,382].forEach((_,idx,arr)=>{
+      if(idx===0)return;
+      const a=lm[arr[idx-1]],b=lm[arr[idx]];
+      if(!a||!b)return;
+      ctx.beginPath();ctx.moveTo(a.x*canvas.width,a.y*canvas.height);
+      ctx.lineTo(b.x*canvas.width,b.y*canvas.height);
+      ctx.strokeStyle='rgba(0,200,80,0.3)';ctx.lineWidth=1;ctx.stroke();
+    });
+  }
+
+  // === معالجة الرمش ===
+  function handleBlink(){
+    const cursor=document.getElementById('eyeCursor');
+    cursor.classList.add('blink-click');
+    setTimeout(()=>cursor.classList.remove('blink-click'),300);
+
+    // هل المؤشر فوق عنصر قابل للتفاعل؟
+    const el=document.elementFromPoint(smoothX,smoothY);
+    if(!el)return;
+
+    // زر نظري
+    const gazeBtn=el.closest('.gaze-btn');
+    if(gazeBtn){
+      gazeBtn.click();
+      redFlash();
+      return;
+    }
+
+    // مفتاح لوحة مفاتيح
+    const kbKey=el.closest('.kb-key');
+    if(kbKey){
+      const char=kbKey.dataset.char;
+      const input=document.getElementById('nameInput');
+      if(char==='backspace'){
+        input.value=input.value.slice(0,-1);
+      }else{
+        input.value+=char;
+      }
+      redFlash();
+      return;
+    }
+
+    // حقل التاريخ
+    if(el.closest('#birthInput')){
+      document.getElementById('birthInput').showPicker?.();
+    }
+  }
+
+  // === حلقة تحديث المؤشر والنظر ===
+  function updateCursor(){
+    const sx=eyeX*window.innerWidth;
+    const sy=eyeY*window.innerHeight;
+
+    // تنعيم الحركة
+    smoothX+=(sx-smoothX)*0.25;
+    smoothY+=(sy-smoothY)*0.25;
+
+    eyeCursor.style.left=smoothX+'px';
+    eyeCursor.style.top=smoothY+'px';
+    eyeCursor.style.display='block';
+
+    // كشف العنصر تحت المؤشر
+    const el=document.elementFromPoint(smoothX,smoothY);
+
+    // إعادة تعيين كل أزرار النظر
+    document.querySelectorAll('.gaze-btn.gazing').forEach(b=>{
+      b.classList.remove('gazing');b.style.removeProperty('--gaze-progress');
+    });
+    gazeTarget=null;
+
+    if(el){
+      const gazeBtn=el.closest('.gaze-btn');
+      if(gazeBtn){
+        if(gazeTarget!==gazeBtn){
+          gazeTarget=gazeBtn;gazeStartTime=Date.now();
+        }
+        const elapsed=Date.now()-gazeStartTime;
+        const progress=Math.min(elapsed/GAZE_DURATION*100,100);
+        gazeBtn.classList.add('gazing');
+        gazeBtn.style.setProperty('--gaze-progress',progress+'%');
+
+        if(progress>=100){
+          gazeBtn.click();
+          redFlash();
+          gazeTarget=null;gazeStartTime=0;
+          gazeBtn.classList.remove('gazing');gazeBtn.style.removeProperty('--gaze-progress');
+        }
+      }
+    }
+
+    requestAnimationFrame(updateCursor);
+  }
+
+  // === بدء الكاميرا وتتبع العين ===
+  async function startEyeTracking(){
+    const video=document.getElementById('webcam');
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:480},height:{ideal:360}}});
+      video.srcObject=stream;await video.play();
+      video.style.transform=isMirrored?'scaleX(-1)':'none';
+
+      faceMeshInstance=new FaceMesh({locateFile:(file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+      faceMeshInstance.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:0.5,minTrackingConfidence:0.5});
+      faceMeshInstance.onResults(processFaceResults);
+
+      cameraInstance=new Camera(video,{
+        onFrame:async()=>{if(faceMeshInstance)await faceMeshInstance.send({image:video});},
+        width:480,height:360
+      });
+      cameraInstance.start();
+      updateCursor();
+      showToast('تتبع العين نشط • انظر ورمش للاختيار');
+    }catch(err){
+      console.error('Camera error:',err);
+      showToast('تعذر الوصول للكاميرا - استخدم اللمس/الماوس');
+      eyeCursor.style.display='none';
+    }
+  }
+
+  // === بدء العملية ===
+  function startProcess(){
+    const name=document.getElementById('nameInput').value.trim();
+    const birth=document.getElementById('birthInput').value;
+    if(!name){showToast('يجب أن تنطق باسمك للظلام...');shakeScreen();return;}
+    if(!birth){showToast('الهاوية تطلب تاريخ ميلادك...');shakeScreen();return;}
+    if(new Date(birth)>today){showToast('لا يمكنك أن تولد في المستقبل...');shakeScreen();return;}
+    switchScreen('inputScreen','analysisScreen');
+    drawAnalyzedFace(savedLandmarks);
+    if(savedLandmarks){
+      document.getElementById('dataPoints').textContent=savedLandmarks.length;
+      document.getElementById('dataConfidence').textContent=(96+Math.random()*3.9).toFixed(1)+'%';
+    }
+    redFlash();
+  }
+
+  // === تعريفات الوجه ===
+  const FACE_OVAL=[10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109,10];
+  const LEFT_EYE=[33,246,161,160,159,158,157,173,133,155,154,153,145,144,163,7,33];
+  const RIGHT_EYE=[362,398,384,385,386,387,388,466,263,249,390,373,374,380,381,382,362];
+  const LEFT_EYEBROW=[46,53,52,65,55,107,66,105,63,70,46];
+  const RIGHT_EYEBROW=[276,283,282,295,285,336,296,334,293,300,276];
+  const LIPS_OUTER=[61,185,40,39,37,0,267,269,270,409,291,375,321,405,314,17,84,181,91,146,61];
+  const LIPS_INNER=[78,95,88,178,87,14,317,402,318,324,308,415,310,311,312,13,82,81,80,191,78];
+  const NOSE_BRIDGE=[168,6,197,195,5,4,1];
+  const NOSE_BOTTOM=[48,115,220,45,4,275,440,344,278];
+  const LEFT_IRIS=[468,469,470,471,472];
+  const RIGHT_IRIS=[473,474,475,476,477];
+  const TESSELATION=[
+    [10,109,67],[109,67,103],[67,103,54],[103,54,21],[54,21,162],[21,162,127],[162,127,234],[127,234,93],[234,93,132],[93,132,58],[132,58,172],[58,172,136],[172,136,150],[136,150,149],[150,149,176],[149,176,148],[176,148,152],[148,152,377],[152,377,400],[377,400,378],[400,378,379],[378,379,365],[379,365,397],[365,397,288],[397,288,361],[288,361,323],[361,323,454],[323,454,356],[454,356,389],[356,389,251],[389,251,284],[251,284,332],[284,332,297],[332,297,338],[297,338,10],
+    [10,151,9],[151,9,8],[9,8,168],[8,168,6],[168,6,197],[6,197,195],[197,195,5],[195,5,4],[4,1,19],
+    [33,246,161],[246,161,160],[161,160,159],[160,159,158],[159,158,157],[158,157,173],[157,173,133],[173,133,155],[133,155,154],[155,154,153],[154,153,145],[153,145,144],[145,144,163],[144,163,7],[163,7,33],
+    [362,398,384],[398,384,385],[384,385,386],[385,386,387],[386,387,388],[387,388,466],[388,466,263],[466,263,249],[263,249,390],[249,390,373],[390,373,374],[373,374,380],[374,380,381],[380,381,382],[381,382,362],
+    [61,185,40],[185,40,39],[40,39,37],[39,37,0],[37,0,267],[0,267,269],[267,269,270],[269,270,409],[270,409,291],[409,291,375],[291,375,321],[375,321,405],[321,405,314],[405,314,17],[314,17,84],[17,84,181],[84,181,91],[181,91,146],[91,146,61],
+    [46,53,52],[53,52,65],[52,65,55],[65,55,107],[55,107,66],[107,66,105],[66,105,63],[105,63,70],[63,70,46],
+    [276,283,282],[283,282,295],[282,295,285],[295,285,336],[285,336,296],[336,296,334],[296,334,293],[334,293,300],[293,300,276]
+  ];
+
+  // === رسم الوجه المحلل ===
+  function drawAnalyzedFace(landmarks){
+    const canvas=document.getElementById('faceResultCanvas');
+    const ctx=canvas.getContext('2d');
+    const dpr=window.devicePixelRatio||1;
+    const dispW=canvas.clientWidth,dispH=canvas.clientHeight;
+    canvas.width=dispW*dpr;canvas.height=dispH*dpr;ctx.scale(dpr,dpr);
+    if(!landmarks||landmarks.length===0)return;
+
+    let minX=1,maxX=0,minY=1,maxY=0;
+    landmarks.forEach(p=>{if(p.x<minX)minX=p.x;if(p.x>maxX)maxX=p.x;if(p.y<minY)minY=p.y;if(p.y>maxY)maxY=p.y;});
+    const fW=maxX-minX,fH=maxY-minY,fCX=(minX+maxX)/2,fCY=(minY+maxY)/2;
+    const scale=Math.min(dispW*0.7/fW,dispH*0.7/fH);
+    const ox=dispW/2,oy=dispH/2;
+    function tx(pt){return ox+(pt.x-fCX)*scale;}
+    function ty(pt){return oy+(pt.y-fCY)*scale;}
+
+    let fc=0;
+    function animate(){
+      fc++;ctx.clearRect(0,0,dispW,dispH);
+      ctx.fillStyle='rgba(8,6,8,0.95)';ctx.fillRect(0,0,dispW,dispH);
+      // شبكة خلفية
+      ctx.strokeStyle='rgba(168,0,0,0.04)';ctx.lineWidth=0.5;
+      for(let x=0;x<dispW;x+=20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,dispH);ctx.stroke();}
+      for(let y=0;y<dispH;y+=20){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(dispW,y);ctx.stroke();}
+      // خط مسح
+      const sY=(fc*1.5)%dispH;
+      const grd=ctx.createLinearGradient(0,sY-30,0,sY+30);
+      grd.addColorStop(0,'rgba(168,0,0,0)');grd.addColorStop(0.5,'rgba(168,0,0,0.08)');grd.addColorStop(1,'rgba(168,0,0,0)');
+      ctx.fillStyle=grd;ctx.fillRect(0,sY-30,dispW,60);
+      // ملء الوجه
+      ctx.beginPath();FACE_OVAL.forEach((idx,i)=>{const p=landmarks[idx];if(!p)return;i===0?ctx.moveTo(tx(p),ty(p)):ctx.lineTo(tx(p),ty(p));});ctx.closePath();
+      const fG=ctx.createRadialGradient(ox,oy,0,ox,oy,Math.max(fW,fH)*scale*0.5);fG.addColorStop(0,'rgba(168,0,0,0.06)');fG.addColorStop(1,'rgba(168,0,0,0.02)');
+      ctx.fillStyle=fG;ctx.fill();
+      // شبكة مثلثية
+      const tA=0.08+Math.sin(fc*0.03)*0.03;ctx.strokeStyle=`rgba(168,0,0,${tA})`;ctx.lineWidth=0.5;
+      TESSELATION.forEach(([a,b,c])=>{if(!landmarks[a]||!landmarks[b]||!landmarks[c])return;ctx.beginPath();ctx.moveTo(tx(landmarks[a]),ty(landmarks[a]));ctx.lineTo(tx(landmarks[b]),ty(landmarks[b]));ctx.lineTo(tx(landmarks[c]),ty(landmarks[c]));ctx.closePath();ctx.stroke();});
+      // محيط الوجه
+      ctx.beginPath();FACE_OVAL.forEach((idx,i)=>{const p=landmarks[idx];if(!p)return;i===0?ctx.moveTo(tx(p),ty(p)):ctx.lineTo(tx(p),ty(p));});ctx.closePath();
+      ctx.strokeStyle='rgba(168,0,0,0.6)';ctx.lineWidth=2;ctx.stroke();ctx.strokeStyle='rgba(168,0,0,0.15)';ctx.lineWidth=6;ctx.stroke();
+      // حواجب
+      [LEFT_EYEBROW,RIGHT_EYEBROW].forEach(brow=>{ctx.beginPath();brow.forEach((idx,i)=>{const p=landmarks[idx];if(!p)return;i===0?ctx.moveTo(tx(p),ty(p)):ctx.lineTo(tx(p),ty(p));});ctx.strokeStyle='rgba(168,0,0,0.5)';ctx.lineWidth=1.5;ctx.stroke();});
+      // عيون
+      [LEFT_EYE,RIGHT_EYE].forEach(eye=>{ctx.beginPath();eye.forEach((idx,i)=>{const p=landmarks[idx];if(!p)return;i===0?ctx.moveTo(tx(p),ty(p)):ctx.lineTo(tx(p),ty(p));});ctx.closePath();ctx.fillStyle='rgba(0,0,0,0.3)';ctx.fill();ctx.strokeStyle='rgba(0,200,80,0.7)';ctx.lineWidth=1.5;ctx.stroke();ctx.strokeStyle='rgba(0,200,80,0.15)';ctx.lineWidth=5;ctx.stroke();});
+      // قزحية
+      [LEFT_IRIS,RIGHT_IRIS].forEach(iris=>{if(!iris.every(i=>landmarks[i]))return;let cx=0,cy=0;iris.forEach(i=>{cx+=tx(landmarks[i]);cy+=ty(landmarks[i]);});cx/=iris.length;cy/=iris.length;let r=0;iris.forEach(i=>{r+=Math.hypot(tx(landmarks[i])-cx,ty(landmarks[i])-cy);});r/=iris.length;
+      const iG=ctx.createRadialGradient(cx,cy,0,cx,cy,r*2);iG.addColorStop(0,'rgba(0,200,80,0.15)');iG.addColorStop(1,'rgba(0,200,80,0)');ctx.beginPath();ctx.arc(cx,cy,r*2,0,Math.PI*2);ctx.fillStyle=iG;ctx.fill();ctx.beginPath();ctx.arc(cx,cy,r*1.4,0,Math.PI*2);ctx.strokeStyle='rgba(0,200,80,0.6)';ctx.lineWidth=1;ctx.stroke();ctx.beginPath();ctx.arc(cx,cy,r*0.5,0,Math.PI*2);ctx.fillStyle='rgba(0,200,80,0.8)';ctx.fill();});
+      // أنف
+      ctx.beginPath();NOSE_BRIDGE.forEach((idx,i)=>{const p=landmarks[idx];if(!p)return;i===0?ctx.moveTo(tx(p),ty(p)):ctx.lineTo(tx(p),ty(p));});ctx.strokeStyle='rgba(168,0,0,0.35)';ctx.lineWidth=1;ctx.stroke();
+      ctx.beginPath();NOSE_BOTTOM.forEach((idx,i)=>{const p=landmarks[idx];if(!p)return;i===0?ctx.moveTo(tx(p),ty(p)):ctx.lineTo(tx(p),ty(p));});ctx.strokeStyle='rgba(168,0,0,0.3)';ctx.lineWidth=0.8;ctx.stroke();
+      // شفاه
+      ctx.beginPath();LIPS_OUTER.forEach((idx,i)=>{const p=landmarks[idx];if(!p)return;i===0?ctx.moveTo(tx(p),ty(p)):ctx.lineTo(tx(p),ty(p));});ctx.closePath();ctx.fillStyle='rgba(120,0,0,0.2)';ctx.fill();ctx.strokeStyle='rgba(200,0,0,0.5)';ctx.lineWidth=1.2;ctx.stroke();ctx.strokeStyle='rgba(200,0,0,0.12)';ctx.lineWidth=4;ctx.stroke();
+      ctx.beginPath();LIPS_INNER.forEach((idx,i)=>{const p=landmarks[idx];if(!p)return;i===0?ctx.moveTo(tx(p),ty(p)):ctx.lineTo(tx(p),ty(p));});ctx.closePath();ctx.strokeStyle='rgba(200,0,0,0.35)';ctx.lineWidth=0.8;ctx.stroke();
+      // نقاط
+      landmarks.forEach((pt,i)=>{const x=tx(pt),y=ty(pt);const pulse=Math.sin(fc*0.05+i*0.1)*0.3+0.7;ctx.beginPath();ctx.arc(x,y,2,0,Math.PI*2);ctx.fillStyle=`rgba(168,0,0,${0.08*pulse})`;ctx.fill();ctx.beginPath();ctx.arc(x,y,0.8,0,Math.PI*2);ctx.fillStyle=`rgba(200,0,0,${0.4*pulse})`;ctx.fill();});
+      // معلومات
+      ctx.font='10px Tajawal';ctx.fillStyle='rgba(168,0,0,0.4)';
+      ctx.fillText('FACE-ID: VERIFIED',30,40);ctx.fillText('EYE-CTRL: ACTIVE',30,55);
+      ctx.fillText(`PTS: ${landmarks.length}`,30,dispH-30);ctx.fillText('DEPTH: ACTIVE',30,dispH-45);
+      // زوايا
+      ctx.strokeStyle='rgba(168,0,0,0.3)';ctx.lineWidth=1;const cl=20;
+      ctx.beginPath();ctx.moveTo(15,15+cl);ctx.lineTo(15,15);ctx.lineTo(15+cl,15);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(dispW-15-cl,15);ctx.lineTo(dispW-15,15);ctx.lineTo(dispW-15,15+cl);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(15,dispH-15-cl);ctx.lineTo(15,dispH-15);ctx.lineTo(15+cl,dispH-15);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(dispW-15-cl,dispH-15);ctx.lineTo(dispW-15,dispH-15);ctx.lineTo(dispW-15,dispH-15-cl);ctx.stroke();
+
+      if(currentScreen==='analysisScreen')requestAnimationFrame(animate);
+    }
+    animate();
+  }
+
+  // === التحميل ===
+  const loadingMessages=["يتم استشارة الظلام","الظلال تهمس باسمك","قراءة عظام المنسيين","حاصد الأرواح يحسب أيامك","قبرك يُحفر الآن","هل تسمع الأجراس تدق؟","الموت يكتب رسالته إليك","الساعة تدق ساعة رحيلك","شيء ما يراقبك من الغياب","العقد يُوقَّع بالدم"];
+
+  function goToLoading(){
+    switchScreen('analysisScreen','loadingScreen');
+    const lt=document.getElementById('loadingText'),lb=document.getElementById('loadingBar');
+    let mi=0,pr=0;
+    const li=setInterval(()=>{mi++;if(mi<loadingMessages.length)lt.textContent=loadingMessages[mi];pr+=(100/loadingMessages.length);lb.style.width=Math.min(pr,95)+'%';},600);
+    setTimeout(()=>redFlash(),1800);setTimeout(()=>redFlash(),3600);
+    setTimeout(()=>{clearInterval(li);lb.style.width='100%';setTimeout(()=>showResult(),400);},5500);
+  }
+
+  // === النتيجة ===
+  const creepyMessages=["توكّ... توكّ... الساعة لا تتوقف للأحياء.","لا يمكنك نسيان ما كُشف لك. الظلام يعرف اسمك.","كل ثانية تمر هي ثانية لن تعود.","نم الليلة إن استطعت. الظلال حفظت ملامحك.","القبر صبور... لكنه لا ينتظر للأبد.","أبوابٌ فُتحت لا تُغلق. لقد عبرت أحدها لتوّك.","انظر خلفك... ليس الآن... حين تنطفئ الأضواء.","العد التنازلي بدأ. أنت فقط لا تسمعه... بعد.","الظلام لا ينسى من ينظر إليه.","وجهك محفور في ذاكرة الهاوية إلى الأبد."];
+  function formatDateArabic(d){const m=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];return`${d.getDate()} ${m[d.getMonth()]} ${d.getFullYear()}`;}
+  function calculateDeath(b){
+    const bd=new Date(b),age=today.getFullYear()-bd.getFullYear();let ry;
+    if(age<18)ry=Math.floor(Math.random()*55)+12;else if(age<35)ry=Math.floor(Math.random()*45)+8;
+    else if(age<55)ry=Math.floor(Math.random()*30)+5;else if(age<70)ry=Math.floor(Math.random()*20)+2;
+    else ry=Math.floor(Math.random()*12)+1;
+    const dd=new Date(today.getFullYear()+ry,Math.floor(Math.random()*12),Math.floor(Math.random()*28)+1);
+    const diff=dd-today,d=Math.floor(diff/864e5),y=Math.floor(d/365),mo=Math.floor((d%365)/30),dy=d%30;
+    return{deathDate:dd,years:y,months:mo,days:dy};
+  }
+
+  function showResult(){
+    switchScreen('loadingScreen','resultScreen');
+    const name=document.getElementById('nameInput').value.trim(),birth=document.getElementById('birthInput').value;
+    const result=calculateDeath(birth),msg=creepyMessages[Math.floor(Math.random()*creepyMessages.length)];
+    document.getElementById('resultName').textContent=name;
+    document.getElementById('deathDateText').textContent=formatDateArabic(result.deathDate);
+    document.getElementById('creepyMsg').textContent=msg;
+    const cr=document.getElementById('countdownRow');cr.innerHTML='';
+    [{num:result.years,lbl:'سنة'},{num:result.months,lbl:'شهر'},{num:result.days,lbl:'يوم'}].forEach(u=>{
+      const div=document.createElement('div');div.className='countdown-unit glass';
+      div.innerHTML=`<span class="num">${u.num}</span><span class="lbl">${u.lbl}</span>`;cr.appendChild(div);
+    });
+    redFlash();setTimeout(()=>shakeScreen(),200);setTimeout(()=>redFlash(),800);
+  }
+
+  function resetApp(){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+    document.getElementById('inputScreen').classList.add('active');currentScreen='inputScreen';
+    document.getElementById('loadingBar').style.width='0%';
+    document.getElementById('nameInput').value='';document.getElementById('birthInput').value='';
+  }
+
+  // === تفاعل بديل (ماوس/لمس) ===
+  document.addEventListener('mousemove',(e)=>{eyeX=e.clientX/window.innerWidth;eyeY=e.clientY/window.innerHeight;});
+  document.addEventListener('touchmove',(e)=>{const t=e.touches[0];eyeX=t.clientX/window.innerWidth;eyeY=t.clientY/window.innerHeight;},{passive:true});
+  document.addEventListener('touchstart',(e)=>{const t=e.touches[0];eyeX=t.clientX/window.innerWidth;eyeY=t.clientY/window.innerHeight;},{passive:true});
+
+  // لوحة المفاتيح تظهر عند النقر على حقل الاسم
+  document.getElementById('nameInput').addEventListener('click',()=>{
+    document.getElementById('nameKeyboard').classList.add('active');
+  });
+
+  // بدء تتبع العين
+  startEyeTracking();
+  document.getElementById('btnMirror').classList.add('active-ctrl');
+</script>
+</body>
+</html>
