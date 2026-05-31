@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GestureCalc AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <style>
+        /* === Theme Variables === */
+        :root, [data-theme="dark"] {
+            --bg: #0a0a0a; --fg: #f5f5f5; --muted: #737373; --accent: #10b981;
+            --accent-glow: rgba(16,185,129,0.25); --card: #1a1a1a; --card-border: rgba(255,255,255,0.07);
+            --btn-num: rgba(255,255,255,0.06); --btn-num-hover: rgba(255,255,255,0.12);
+            --btn-op: rgba(16,185,129,0.12); --btn-op-hover: rgba(16,185,129,0.24);
+            --btn-sci: rgba(168,85,247,0.1); --btn-sci-hover: rgba(168,85,247,0.2);
+            --btn-eq: #10b981; --btn-eq-hover: #059669;
+            --display-bg: rgba(10,10,10,0.6); --history-bg: rgba(20,20,20,0.8);
+            --shadow: rgba(0,0,0,0.4); --cursor-color: #10b981; --cursor-glow: rgba(16,185,129,0.5);
+        }
+        [data-theme="light"] {
+            --bg: #f0f0f0; --fg: #171717; --muted: #737373; --accent: #059669;
+            --accent-glow: rgba(5,150,105,0.2); --card: #ffffff; --card-border: rgba(0,0,0,0.08);
+            --btn-num: rgba(0,0,0,0.05); --btn-num-hover: rgba(0,0,0,0.1);
+            --btn-op: rgba(5,150,105,0.1); --btn-op-hover: rgba(5,150,105,0.2);
+            --btn-sci: rgba(124,58,237,0.08); --btn-sci-hover: rgba(124,58,237,0.16);
+            --btn-eq: #059669; --btn-eq-hover: #047857;
+            --display-bg: rgba(255,255,255,0.7); --history-bg: rgba(255,255,255,0.9);
+            --shadow: rgba(0,0,0,0.1); --cursor-color: #059669; --cursor-glow: rgba(5,150,105,0.4);
+        }
+        [data-theme="cyberpunk"] {
+            --bg: #0d0221; --fg: #e0e0ff; --muted: #7b7baa; --accent: #ff2a6d;
+            --accent-glow: rgba(255,42,109,0.3); --card: #150535; --card-border: rgba(255,42,109,0.2);
+            --btn-num: rgba(255,255,255,0.05); --btn-num-hover: rgba(255,42,109,0.1);
+            --btn-op: rgba(255,42,109,0.15); --btn-op-hover: rgba(255,42,109,0.3);
+            --btn-sci: rgba(5,255,163,0.1); --btn-sci-hover: rgba(5,255,163,0.2);
+            --btn-eq: #ff2a6d; --btn-eq-hover: #e0184f;
+            --display-bg: rgba(13,2,33,0.7); --history-bg: rgba(21,5,53,0.9);
+            --shadow: rgba(255,42,109,0.15); --cursor-color: #05ffa3; --cursor-glow: rgba(5,255,163,0.6);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body {
+            font-family: 'Space Grotesk', sans-serif; background: var(--bg); color: var(--fg);
+            min-height: 100dvh; overflow: hidden; transition: background 0.4s, color 0.4s;
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* === Ambient Background === */
+        .bg-blob {
+            position: fixed; border-radius: 50%; filter: blur(80px); opacity: 0.3; pointer-events: none;
+            z-index: 0; transition: background 0.6s;
+        }
+        .blob-1 { width: 300px; height: 300px; top: -80px; left: -80px; background: var(--accent); animation: blobMove1 12s ease-in-out infinite; }
+        .blob-2 { width: 250px; height: 250px; bottom: -60px; right: -60px; background: var(--accent); animation: blobMove2 15s ease-in-out infinite; opacity: 0.2; }
+        @keyframes blobMove1 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(40px,60px)} }
+        @keyframes blobMove2 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-50px,-40px)} }
+
+        /* === Calculator Card === */
+        .calc-card {
+            background: var(--card); border: 1px solid var(--card-border); border-radius: 24px;
+            box-shadow: 0 8px 32px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.05);
+            backdrop-filter: blur(20px); transition: background 0.4s, border-color 0.4s, box-shadow 0.4s;
+        }
+
+        /* === Buttons === */
+        .calc-btn {
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 14px; font-weight: 600; font-size: 1.1rem; cursor: pointer;
+            border: 1px solid transparent; transition: all 0.15s ease; user-select: none;
+            position: relative; overflow: hidden;
+        }
+        .calc-btn:active { transform: scale(0.93); }
+        .calc-btn.num { background: var(--btn-num); color: var(--fg); }
+        .calc-btn.num:hover, .calc-btn.num.gesture-hover { background: var(--btn-num-hover); }
+        .calc-btn.op { background: var(--btn-op); color: var(--accent); }
+        .calc-btn.op:hover, .calc-btn.op.gesture-hover { background: var(--btn-op-hover); }
+        .calc-btn.sci { background: var(--btn-sci); color: var(--muted); font-size: 0.85rem; }
+        .calc-btn.sci:hover, .calc-btn.sci.gesture-hover { background: var(--btn-sci-hover); color: var(--fg); }
+        .calc-btn.eq { background: var(--btn-eq); color: #fff; font-size: 1.4rem; }
+        .calc-btn.eq:hover, .calc-btn.eq.gesture-hover { background: var(--btn-eq-hover); }
+        .calc-btn.fn { background: var(--btn-op); color: var(--accent); font-size: 0.95rem; }
+        .calc-btn.fn:hover, .calc-btn.fn.gesture-hover { background: var(--btn-op-hover); }
+
+        /* Gesture hover glow effect */
+        .calc-btn.gesture-hover::after {
+            content: ''; position: absolute; inset: -2px; border-radius: 16px;
+            border: 2px solid var(--accent); opacity: 0.8; animation: pulseGlow 0.8s ease-in-out infinite;
+        }
+        .calc-btn.gesture-press { transform: scale(0.9)!important; filter: brightness(1.3); }
+        @keyframes pulseGlow { 0%,100%{opacity:0.4;transform:scale(1)} 50%{opacity:1;transform:scale(1.02)} }
+
+        /* === PIP Camera === */
+        .pip-container {
+            position: fixed; z-index: 40; border-radius: 16px; overflow: hidden;
+            border: 2px solid var(--card-border); box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+            transition: all 0.3s cubic-bezier(0.4,0,0.2,1); touch-action: none; background: #000;
+        }
+        .pip-container.minimized { width: 48px!important; height: 48px!important; border-radius: 50%; }
+        .pip-container.minimized .pip-inner { opacity: 0; }
+        .pip-container.minimized .pip-expand { opacity: 1; }
+        .pip-inner { width: 100%; height: 100%; position: relative; }
+        .pip-expand {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            color: var(--accent); font-size: 18px; opacity: 0; transition: opacity 0.2s;
+        }
+        .pip-canvas { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(-1); }
+
+        /* === Virtual Cursor === */
+        .cursor-dot {
+            position: fixed; z-index: 9999; pointer-events: none; transition: opacity 0.2s;
+            width: 24px; height: 24px; transform: translate(-50%, -50%);
+        }
+        .cursor-ring {
+            position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--cursor-color);
+            transition: all 0.15s ease; box-shadow: 0 0 12px var(--cursor-glow);
+        }
+        .cursor-dot.pinch .cursor-ring {
+            width: 12px; height: 12px; top: 6px; left: 6px;
+            background: var(--cursor-color); border-color: var(--cursor-color);
+        }
+        .cursor-label {
+            position: absolute; top: 28px; left: 50%; transform: translateX(-50%);
+            font-size: 9px; font-weight: 700; color: var(--cursor-color); white-space: nowrap;
+            text-transform: uppercase; letter-spacing: 1px; opacity: 0.8;
+        }
+
+        /* === History Panel === */
+        .history-panel {
+            position: fixed; inset: 0; z-index: 50; pointer-events: none; opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .history-panel.open { pointer-events: auto; opacity: 1; }
+        .history-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.5); }
+        .history-drawer {
+            position: absolute; top: 0; right: 0; width: 85%; max-width: 340px; height: 100%;
+            background: var(--history-bg); border-left: 1px solid var(--card-border);
+            backdrop-filter: blur(24px); transform: translateX(100%); transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
+            display: flex; flex-direction: column;
+        }
+        .history-panel.open .history-drawer { transform: translateX(0); }
+
+        /* === Settings Modal === */
+        .settings-overlay {
+            position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center;
+            background: rgba(0,0,0,0.6); opacity: 0; pointer-events: none; transition: opacity 0.3s;
+        }
+        .settings-overlay.open { opacity: 1; pointer-events: auto; }
+        .settings-sheet {
+            width: 100%; max-width: 480px; max-height: 85dvh; background: var(--card);
+            border-radius: 24px 24px 0 0; border: 1px solid var(--card-border); border-bottom: none;
+            transform: translateY(100%); transition: transform 0.4s cubic-bezier(0.4,0,0.2,1);
+            overflow-y: auto; padding: 24px; padding-bottom: max(24px, env(safe-area-inset-bottom));
+        }
+        .settings-overlay.open .settings-sheet { transform: translateY(0); }
+        .settings-handle { width: 40px; height: 4px; border-radius: 4px; background: var(--muted); margin: 0 auto 20px; opacity: 0.4; }
+
+        /* Custom range slider */
+        input[type="range"] {
+            -webkit-appearance: none; width: 100%; height: 6px; border-radius: 3px;
+            background: var(--btn-num); outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
+            background: var(--accent); cursor: pointer; border: 2px solid var(--card);
+        }
+        /* Toggle switch */
+        .toggle-track {
+            width: 48px; height: 28px; border-radius: 14px; background: var(--btn-num);
+            position: relative; cursor: pointer; transition: background 0.2s; flex-shrink: 0;
+        }
+        .toggle-track.on { background: var(--accent); }
+        .toggle-knob {
+            width: 22px; height: 22px; border-radius: 50%; background: #fff;
+            position: absolute; top: 3px; left: 3px; transition: transform 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .toggle-track.on .toggle-knob { transform: translateX(20px); }
+
+        /* === Toast === */
+        .toast-container { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+        .toast {
+            background: var(--card); border: 1px solid var(--card-border); color: var(--fg);
+            padding: 10px 20px; border-radius: 12px; font-size: 0.85rem; font-weight: 500;
+            box-shadow: 0 4px 16px var(--shadow); animation: toastIn 0.3s ease, toastOut 0.3s ease 2.7s forwards;
+            backdrop-filter: blur(12px);
+        }
+        @keyframes toastIn { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes toastOut { from{opacity:1} to{opacity:0;transform:translateY(-8px)} }
+
+        /* === Misc === */
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms!important; transition-duration: 0.01ms!important; }
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-start min-h-screen relative overflow-hidden">
+
+    <!-- Ambient Background -->
+    <div class="bg-blob blob-1"></div>
+    <div class="bg-blob blob-2"></div>
+
+    <!-- Main App Container -->
+    <main class="relative z-10 w-full max-w-[420px] mx-auto px-3 pt-2 pb-4 flex flex-col" style="height:100dvh;">
+        <!-- Top Bar -->
+        <header class="flex items-center justify-between py-2 mb-1">
+            <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full" id="statusDot" style="background:var(--muted)"></div>
+                <span class="text-xs font-medium" style="color:var(--muted)" id="statusText">Camera Off</span>
+            </div>
+            <div class="flex items-center gap-1">
+                <button id="btnCamera" class="w-9 h-9 rounded-xl flex items-center justify-center transition-colors" style="background:var(--btn-num);color:var(--fg)" aria-label="Toggle Camera">
+                    <i class="fa-solid fa-video-slash text-sm"></i>
+                </button>
+                <button id="btnHistory" class="w-9 h-9 rounded-xl flex items-center justify-center transition-colors" style="background:var(--btn-num);color:var(--fg)" aria-label="History">
+                    <i class="fa-solid fa-clock-rotate-left text-sm"></i>
+                </button>
+                <button id="btnSettings" class="w-9 h-9 rounded-xl flex items-center justify-center transition-colors" style="background:var(--btn-num);color:var(--fg)" aria-label="Settings">
+                    <i class="fa-solid fa-gear text-sm"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Calculator Card -->
+        <div class="calc-card flex-1 flex flex-col p-3 min-h-0">
+            <!-- Display -->
+            <div class="rounded-2xl p-4 mb-3 flex flex-col justify-end min-h-[110px]" style="background:var(--display-bg)">
+                <div id="exprDisplay" class="mono text-right text-sm mb-1 truncate" style="color:var(--muted);min-height:20px;"></div>
+                <div id="resultDisplay" class="mono text-right text-4xl font-bold truncate" style="color:var(--fg)">0</div>
+            </div>
+
+            <!-- Button Grid -->
+            <div class="grid grid-cols-5 gap-[6px] flex-1 min-h-0" id="btnGrid">
+                <!-- Row 1: Scientific -->
+                <button class="calc-btn sci" data-action="sin">sin</button>
+                <button class="calc-btn sci" data-action="cos">cos</button>
+                <button class="calc-btn sci" data-action="tan">tan</button>
+                <button class="calc-btn sci" data-action="log">log</button>
+                <button class="calc-btn sci" data-action="sqrt">√</button>
+                <!-- Row 2: Scientific + Power -->
+                <button class="calc-btn sci" data-action="pow">x<sup>y</sup></button>
+                <button class="calc-btn sci" data-action="pi">π</button>
+                <button class="calc-btn sci" data-action="e">e</button>
+                <button class="calc-btn sci" data-action="lparen">(</button>
+                <button class="calc-btn sci" data-action="rparen">)</button>
+                <!-- Row 3: Clear / % -->
+                <button class="calc-btn fn" data-action="clear">AC</button>
+                <button class="calc-btn fn" data-action="backspace"><i class="fa-solid fa-delete-left"></i></button>
+                <button class="calc-btn op" data-action="percent">%</button>
+                <button class="calc-btn op" data-action="divide">÷</button>
+                <!-- Row 4: 7 8 9 × -->
+                <button class="calc-btn num" data-action="7">7</button>
+                <button class="calc-btn num" data-action="8">8</button>
+                <button class="calc-btn num" data-action="9">9</button>
+                <button class="calc-btn op" data-action="multiply">×</button>
+                <!-- Row 5: 4 5 6 - -->
+                <button class="calc-btn num" data-action="4">4</button>
+                <button class="calc-btn num" data-action="5">5</button>
+                <button class="calc-btn num" data-action="6">6</button>
+                <button class="calc-btn op" data-action="subtract">−</button>
+                <!-- Row 6: 1 2 3 + -->
+                <button class="calc-btn num" data-action="1">1</button>
+                <button class="calc-btn num" data-action="2">2</button>
+                <button class="calc-btn num" data-action="3">3</button>
+                <button class="calc-btn op" data-action="add">+</button>
+                <!-- Row 7: ± 0 . = -->
+                <button class="calc-btn fn" data-action="negate">±</button>
+                <button class="calc-btn num" data-action="0">0</button>
+                <button class="calc-btn num" data-action=".">.</button>
+                <button class="calc-btn eq" data-action="equals">=</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- PIP Camera Container -->
+    <div class="pip-container minimized" id="pipContainer" style="bottom:24px;left:16px;width:48px;height:48px;">
+        <div class="pip-inner">
+            <canvas class="pip-canvas" id="pipCanvas"></canvas>
+        </div>
+        <div class="pip-expand"><i class="fa-solid fa-expand"></i></div>
+    </div>
+
+    <!-- Virtual Cursor -->
+    <div class="cursor-dot" id="cursorDot" style="opacity:0;">
+        <div class="cursor-ring"></div>
+        <div class="cursor-label" id="cursorLabel"></div>
+    </div>
+
+    <!-- Hidden Video -->
+    <video id="videoEl" style="display:none;" playsinline></video>
+
+    <!-- History Panel -->
+    <div class="history-panel" id="historyPanel">
+        <div class="history-backdrop" id="historyBackdrop"></div>
+        <div class="history-drawer">
+            <div class="flex items-center justify-between p-5 pb-3">
+                <h2 class="text-lg font-bold">History</h2>
+                <div class="flex gap-2">
+                    <button id="btnClearHistory" class="text-xs px-3 py-1.5 rounded-lg font-medium" style="background:var(--btn-op);color:var(--accent)">Clear All</button>
+                    <button id="btnCloseHistory" class="w-8 h-8 rounded-lg flex items-center justify-center" style="background:var(--btn-num);color:var(--fg)">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto px-5 pb-5 scrollbar-hide" id="historyList">
+                <p class="text-center py-8 text-sm" style="color:var(--muted)">No calculations yet</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="settings-overlay" id="settingsOverlay">
+        <div class="settings-sheet">
+            <div class="settings-handle"></div>
+            <h2 class="text-lg font-bold mb-5">Settings</h2>
+
+            <!-- Camera -->
+            <div class="mb-5">
+                <h3 class="text-xs font-bold uppercase tracking-wider mb-3" style="color:var(--muted)">Camera</h3>
+                <div class="flex items-center justify-between py-2">
+                    <span class="text-sm">Camera</span>
+                    <div class="toggle-track" id="toggleCamera" role="switch" aria-label="Toggle Camera">
+                        <div class="toggle-knob"></div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between py-2">
+                    <span class="text-sm">Facing Mode</span>
+                    <button id="btnFlipCamera" class="text-xs px-3 py-1.5 rounded-lg font-medium" style="background:var(--btn-op);color:var(--accent)">
+                        <i class="fa-solid fa-camera-rotate mr-1"></i> Front
+                    </button>
+                </div>
+            </div>
+
+            <!-- AI Settings -->
+            <div class="mb-5">
+                <h3 class="text-xs font-bold uppercase tracking-wider mb-3" style="color:var(--muted)">AI Engine</h3>
+                <div class="mb-3">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-sm">Detection Confidence</span>
+                        <span class="mono text-xs" style="color:var(--accent)" id="detConfVal">0.70</span>
+                    </div>
+                    <input type="range" min="0.3" max="1.0" step="0.05" value="0.7" id="sliderDetConf">
+                </div>
+                <div class="mb-3">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-sm">Tracking Confidence</span>
+                        <span class="mono text-xs" style="color:var(--accent)" id="trackConfVal">0.70</span>
+                    </div>
+                    <input type="range" min="0.3" max="1.0" step="0.05" value="0.7" id="sliderTrackConf">
+                </div>
+                <div class="flex items-center justify-between py-2">
+                    <span class="text-sm">Performance Mode</span>
+                    <button id="btnPerfMode" class="text-xs px-3 py-1.5 rounded-lg font-medium" style="background:var(--btn-op);color:var(--accent)">
+                        <i class="fa-solid fa-bolt mr-1"></i> Balanced
+                    </button>
+                </div>
+            </div>
+
+            <!-- Cursor Settings -->
+            <div class="mb-5">
+                <h3 class="text-xs font-bold uppercase tracking-wider mb-3" style="color:var(--muted)">Cursor</h3>
+                <div class="mb-3">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-sm">Smoothing</span>
+                        <span class="mono text-xs" style="color:var(--accent)" id="smoothVal">0.35</span>
+                    </div>
+                    <input type="range" min="0.05" max="0.9" step="0.05" value="0.35" id="sliderSmooth">
+                </div>
+            </div>
+
+            <!-- Theme -->
+            <div class="mb-2">
+                <h3 class="text-xs font-bold uppercase tracking-wider mb-3" style="color:var(--muted)">Theme</h3>
+                <div class="flex gap-2">
+                    <button class="theme-btn flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all" data-theme="dark" style="background:var(--btn-num);color:var(--fg)">Dark</button>
+                    <button class="theme-btn flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all" data-theme="light" style="background:var(--btn-num);color:var(--fg)">Light</button>
+                    <button class="theme-btn flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all" data-theme="cyberpunk" style="background:var(--btn-num);color:var(--fg)">Cyberpunk</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+<script>
+/* ============================================================
+   GestureCalc AI — Complete Application Logic
+   ============================================================ */
+
+// ---- DOM References ----
+const videoEl = document.getElementById('videoEl');
+const pipCanvas = document.getElementById('pipCanvas');
+const pipCtx = pipCanvas.getContext('2d');
+const pipContainer = document.getElementById('pipContainer');
+const cursorDot = document.getElementById('cursorDot');
+const cursorLabel = document.getElementById('cursorLabel');
+const btnGrid = document.getElementById('btnGrid');
+const exprDisplay = document.getElementById('exprDisplay');
+const resultDisplay = document.getElementById('resultDisplay');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const toastContainer = document.getElementById('toastContainer');
+
+// ---- Application State ----
+const app = {
+    cameraOn: false,
+    facingMode: 'user',
+    cameraInstance: null,
+    handsInstance: null,
+    // AI/Gesture state
+    rawCursor: { x: 0, y: 0 },       // Raw landmark position (screen coords)
+    smoothCursor: { x: 0, y: 0 },     // Smoothed cursor position
+    cursorVisible: false,
+    isPinching: false,
+    pinchCooldown: false,
+    hoveredBtn: null,
+    handDetected: false,
+    // Settings
+    detectionConf: 0.7,
+    trackingConf: 0.7,
+    modelComplexity: 1,
+    smoothing: 0.35,
+    performanceMode: 'balanced', // 'saver', 'balanced', 'performance'
+    fpsCap: 0,
+    theme: 'dark',
+    // Calculator
+    expression: '',
+    lastResult: '',
+    history: [],
+    evaluated: false,
+    // PIP
+    pipExpanded: true,
+    pipSize: { w: 140, h: 105 },
+    pipPos: { x: 16, y: window.innerHeight - 140 },
+    pipDragging: false,
+    pipDragOffset: { x: 0, y: 0 },
+    // Render
+    lastFrameTime: 0,
+    animFrameId: null
+};
+
+// ---- Utility Functions ----
+function showToast(msg) {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = msg;
+    toastContainer.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+}
+
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+function dist2D(a, b) {
+    return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+}
+
+// ---- Theme Management ----
+function setTheme(theme) {
+    app.theme = theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    document.querySelectorAll('.theme-btn').forEach(b => {
+        b.style.background = b.dataset.theme === theme ? 'var(--accent)' : 'var(--btn-num)';
+        b.style.color = b.dataset.theme === theme ? '#fff' : 'var(--fg)';
+    });
+}
+
+// ---- Calculator Engine ----
+function updateDisplay() {
+    exprDisplay.textContent = app.expression || '';
+    resultDisplay.textContent = app.lastResult || '0';
+    // Auto-shrink result font if too long
+    const len = (app.lastResult || '0').length;
+    resultDisplay.style.fontSize = len > 14 ? '1.5rem' : len > 10 ? '2rem' : '2.25rem';
+}
+
+function appendToExpr(val) {
+    if (app.evaluated) {
+        // If last action was equals and we're adding a number, start fresh
+        // If adding an operator, continue from result
+        const isOp = ['+', '−', '×', '÷', '^', '%'].includes(val);
+        if (!isOp) {
+            app.expression = '';
+            app.lastResult = '';
+        } else {
+            app.expression = app.lastResult;
+        }
+        app.evaluated = false;
+    }
+    app.expression += val;
+    updateDisplay();
+}
+
+function calcAction(action) {
+    switch (action) {
+        case '0': case '1': case '2': case '3': case '4':
+        case '5': case '6': case '7': case '8': case '9':
+            appendToExpr(action);
+            break;
+        case '.':
+            appendToExpr('.');
+            break;
+        case 'add': appendToExpr('+'); break;
+        case 'subtract': appendToExpr('−'); break;
+        case 'multiply': appendToExpr('×'); break;
+        case 'divide': appendToExpr('÷'); break;
+        case 'lparen': appendToExpr('('); break;
+        case 'rparen': appendToExpr(')'); break;
+        case 'percent': appendToExpr('%'); break;
+        case 'pow': appendToExpr('^'); break;
+        case 'pi': appendToExpr('π'); break;
+        case 'e': appendToExpr('e'); break;
+        case 'sin': appendToExpr('sin('); break;
+        case 'cos': appendToExpr('cos('); break;
+        case 'tan': appendToExpr('tan('); break;
+        case 'log': appendToExpr('log('); break;
+        case 'sqrt': appendToExpr('√('); break;
+        case 'negate':
+            if (app.expression && !app.evaluated) {
+                // Wrap in negation
+                app.expression = '(-' + app.expression + ')';
+                app.evaluated = false;
+            }
+            updateDisplay();
+            break;
+        case 'clear':
+            app.expression = '';
+            app.lastResult = '';
+            app.evaluated = false;
+            updateDisplay();
+            break;
+        case 'backspace':
+            if (app.evaluated) {
+                app.expression = '';
+                app.lastResult = '';
+                app.evaluated = false;
+            } else {
+                app.expression = app.expression.slice(0, -1);
+            }
+            updateDisplay();
+            break;
+        case 'equals':
+            evaluate();
+            break;
+    }
+}
+
+function evaluate() {
+    if (!app.expression) return;
+    try {
+        let expr = app.expression;
+        // Replace display symbols with JS math
+        expr = expr.replace(/×/g, '*');
+        expr = expr.replace(/÷/g, '/');
+        expr = expr.replace(/−/g, '-');
+        expr = expr.replace(/π/g, 'Math.PI');
+        expr = expr.replace(/e(?![a-zA-Z])/g, 'Math.E');
+        expr = expr.replace(/\^/g, '**');
+        expr = expr.replace(/(\d+)%/g, '($1/100)');
+        expr = expr.replace(/sin\(/g, 'Math.sin(');
+        expr = expr.replace(/cos\(/g, 'Math.cos(');
+        expr = expr.replace(/tan\(/g, 'Math.tan(');
+        expr = expr.replace(/log\(/g, 'Math.log10(');
+        expr = expr.replace(/√\(/g, 'Math.sqrt(');
+        // Implicit multiplication: 2π → 2*Math.PI, 3( → 3*(
+        expr = expr.replace(/(\d)(Math|sin|cos|tan|log|√|\()/g, '$1*$2');
+        expr = expr.replace(/(\))(Math|sin|cos|tan|log|√|\d|\()/g, '$1*$2');
+
+        // Security: only allow safe characters
+        if (/[^0-9+\-*/.()%MathsincotaglqrtPIE, \n]/.test(expr.replace(/Math\.\w+/g, ''))) {
+            throw new Error('Invalid expression');
+        }
+
+        const result = new Function('return ' + expr)();
+        if (typeof result !== 'number' || !isFinite(result)) {
+            app.lastResult = 'Error';
+        } else {
+            // Format: up to 10 decimal places, remove trailing zeros
+            const formatted = parseFloat(result.toPrecision(12)).toString();
+            app.lastResult = formatted;
+            // Save to history
+            app.history.unshift({ expr: app.expression, result: formatted });
+            if (app.history.length > 50) app.history.pop();
+            renderHistory();
+        }
+    } catch (e) {
+        app.lastResult = 'Error';
+    }
+    app.evaluated = true;
+    updateDisplay();
+}
+
+// ---- History ----
+function renderHistory() {
+    const list = document.getElementById('historyList');
+    if (app.history.length === 0) {
+        list.innerHTML = '<p class="text-center py-8 text-sm" style="color:var(--muted)">No calculations yet</p>';
+        return;
+    }
+    list.innerHTML = app.history.map((h, i) => `
+        <div class="py-3 border-b cursor-pointer" style="border-color:var(--card-border)" onclick="loadHistory(${i})">
+            <div class="text-xs mono truncate" style="color:var(--muted)">${h.expr}</div>
+            <div class="text-base font-bold mono mt-0.5" style="color:var(--fg)">= ${h.result}</div>
+        </div>
+    `).join('');
+}
+
+function loadHistory(idx) {
+    const h = app.history[idx];
+    app.expression = h.expr;
+    app.lastResult = h.result;
+    app.evaluated = true;
+    updateDisplay();
+    closeHistory();
+}
+
+// ---- Camera & MediaPipe ----
+async function initHands() {
+    app.handsInstance = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    app.handsInstance.setOptions({
+        maxNumHands: 1,
+        modelComplexity: app.modelComplexity,
+        minDetectionConfidence: app.detectionConf,
+        minTrackingConfidence: app.trackingConf
+    });
+    app.handsInstance.onResults(onHandResults);
+}
+
+async function startCamera() {
+    try {
+        if (!app.handsInstance) await initHands();
+
+        app.cameraInstance = new Camera(videoEl, {
+            onFrame: async () => {
+                if (app.cameraOn && app.handsInstance) {
+                    await app.handsInstance.send({ image: videoEl });
+                }
+            },
+            facingMode: app.facingMode,
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+        });
+        await app.cameraInstance.start();
+        app.cameraOn = true;
+
+        // Update PIP canvas size
+        pipCanvas.width = 320;
+        pipCanvas.height = 240;
+
+        // Update UI
+        statusDot.style.background = 'var(--accent)';
+        statusText.textContent = 'Hand Tracking Active';
+        document.getElementById('btnCamera').querySelector('i').className = 'fa-solid fa-video text-sm';
+        updatePipVisuals();
+        showToast('Camera started — show your hand to control');
+    } catch (err) {
+        console.error('Camera error:', err);
+        showToast('Camera access denied. Check permissions.');
+        app.cameraOn = false;
+    }
+}
+
+function stopCamera() {
+    if (app.cameraInstance) {
+        app.cameraInstance.stop();
+        app.cameraInstance = null;
+    }
+    app.cameraOn = false;
+    app.cursorVisible = false;
+    cursorDot.style.opacity = '0';
+    pipCtx.clearRect(0, 0, pipCanvas.width, pipCanvas.height);
+    statusDot.style.background = 'var(--muted)';
+    statusText.textContent = 'Camera Off';
+    document.getElementById('btnCamera').querySelector('i').className = 'fa-solid fa-video-slash text-sm';
+    updatePipVisuals();
+}
+
+async function toggleCamera() {
+    if (app.cameraOn) {
+        stopCamera();
+    } else {
+        await startCamera();
+    }
+    updateCameraToggle();
+}
+
+async function flipCamera() {
+    app.facingMode = app.facingMode === 'user' ? 'environment' : 'user';
+    const btn = document.getElementById('btnFlipCamera');
+    btn.innerHTML = `<i class="fa-solid fa-camera-rotate mr-1"></i> ${app.facingMode === 'user' ? 'Front' : 'Rear'}`;
+    if (app.cameraOn) {
+        stopCamera();
+        await startCamera();
+        updateCameraToggle();
+    }
+}
+
+function updateCameraToggle() {
+    const toggle = document.getElementById('toggleCamera');
+    if (app.cameraOn) {
+        toggle.classList.add('on');
+    } else {
+        toggle.classList.remove('on');
+    }
+}
+
+// ---- MediaPipe Results Handler ----
+function onHandResults(results) {
+    // Draw to PIP canvas
+    pipCtx.save();
+    pipCtx.clearRect(0, 0, pipCanvas.width, pipCanvas.height);
+    pipCtx.drawImage(results.image, 0, 0, pipCanvas.width, pipCanvas.height);
+
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+
+        // Draw hand skeleton
+        drawConnectors(pipCtx, landmarks, HAND_CONNECTIONS, {
+            color: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#10b981',
+            lineWidth: 2
+        });
+        drawLandmarks(pipCtx, landmarks, {
+            color: '#ffffff',
+            lineWidth: 1,
+            radius: 3
+        });
+
+        // Get index finger tip (landmark 8) and thumb tip (landmark 4)
+        const indexTip = landmarks[8];
+        const thumbTip = landmarks[4];
+
+        // Convert to screen coordinates (mirrored for selfie mode)
+        const screenX = app.facingMode === 'user'
+            ? (1 - indexTip.x) * window.innerWidth
+            : indexTip.x * window.innerWidth;
+        const screenY = indexTip.y * window.innerHeight;
+
+        app.rawCursor.x = screenX;
+        app.rawCursor.y = screenY;
+        app.cursorVisible = true;
+        app.handDetected = true;
+
+        // Pinch detection
+        const pinchDist = dist2D(indexTip, thumbTip);
+        const wasPinching = app.isPinching;
+        app.isPinching = pinchDist < 0.06; // ~6% of frame diagonal
+
+        // Trigger click on pinch start (not continuous)
+        if (app.isPinching && !wasPinching && !app.pinchCooldown) {
+            triggerPinchClick();
+            app.pinchCooldown = true;
+            setTimeout(() => { app.pinchCooldown = false; }, 400);
+        }
+    } else {
+        app.handDetected = false;
+        app.cursorVisible = false;
+    }
+    pipCtx.restore();
+}
+
+function triggerPinchClick() {
+    if (app.hoveredBtn) {
+        const action = app.hoveredBtn.dataset.action;
+        app.hoveredBtn.classList.add('gesture-press');
+        setTimeout(() => app.hoveredBtn.classList.remove('gesture-press'), 200);
+        calcAction(action);
+    }
+}
+
+// ---- Main Render Loop ----
+function renderLoop(timestamp) {
+    app.animFrameId = requestAnimationFrame(renderLoop);
+
+    // FPS cap for battery saver
+    if (app.fpsCap > 0) {
+        const elapsed = timestamp - app.lastFrameTime;
+        if (elapsed < (1000 / app.fpsCap)) return;
+    }
+    app.lastFrameTime = timestamp;
+
+    // Smooth cursor
+    if (app.cursorVisible) {
+        app.smoothCursor.x = lerp(app.smoothCursor.x, app.rawCursor.x, app.smoothing);
+        app.smoothCursor.y = lerp(app.smoothCursor.y, app.rawCursor.y, app.smoothing);
+
+        cursorDot.style.opacity = '1';
+        cursorDot.style.left = app.smoothCursor.x + 'px';
+        cursorDot.style.top = app.smoothCursor.y + 'px';
+
+        if (app.isPinching) {
+            cursorDot.classList.add('pinch');
+        } else {
+            cursorDot.classList.remove('pinch');
+        }
+
+        // Hit test calculator buttons
+        checkButtonHover(app.smoothCursor.x, app.smoothCursor.y);
+    } else {
+        cursorDot.style.opacity = '0';
+        clearButtonHover();
+    }
+}
+
+function checkButtonHover(cx, cy) {
+    const buttons = btnGrid.querySelectorAll('.calc-btn');
+    let found = null;
+
+    for (const btn of buttons) {
+        const rect = btn.getBoundingClientRect();
+        // Slightly expand hit area for easier gesture targeting
+        const padding = 6;
+        if (cx >= rect.left - padding && cx <= rect.right + padding &&
+            cy >= rect.top - padding && cy <= rect.bottom + padding) {
+            found = btn;
+            break;
+        }
+    }
+
+    if (found !== app.hoveredBtn) {
+        clearButtonHover();
+        if (found) {
+            found.classList.add('gesture-hover');
+            cursorLabel.textContent = found.dataset.action.toUpperCase();
+        } else {
+            cursorLabel.textContent = '';
+        }
+        app.hoveredBtn = found;
+    }
+}
+
+function clearButtonHover() {
+    if (app.hoveredBtn) {
+        app.hoveredBtn.classList.remove('gesture-hover');
+        app.hoveredBtn = null;
+    }
+    cursorLabel.textContent = '';
+}
+
+// ---- PIP Controls ----
+function updatePipVisuals() {
+    if (app.cameraOn && app.pipExpanded) {
+        pipContainer.classList.remove('minimized');
+        pipContainer.style.width = app.pipSize.w + 'px';
+        pipContainer.style.height = app.pipSize.h + 'px';
+        pipContainer.style.left = app.pipPos.x + 'px';
+        pipContainer.style.top = app.pipPos.y + 'px';
+        pipContainer.style.bottom = 'auto';
+    } else {
+        pipContainer.classList.add('minimized');
+        pipContainer.style.width = '48px';
+        pipContainer.style.height = '48px';
+        pipContainer.style.left = app.pipPos.x + 'px';
+        pipContainer.style.top = app.pipPos.y + 'px';
+        pipContainer.style.bottom = 'auto';
+    }
+}
+
+function togglePip() {
+    app.pipExpanded = !app.pipExpanded;
+    updatePipVisuals();
+}
+
+// PIP Drag handling
+function initPipDrag() {
+    pipContainer.addEventListener('pointerdown', (e) => {
+        app.pipDragging = true;
+        const rect = pipContainer.getBoundingClientRect();
+        app.pipDragOffset.x = e.clientX - rect.left;
+        app.pipDragOffset.y = e.clientY - rect.top;
+        pipContainer.setPointerCapture(e.pointerId);
+    });
+
+    pipContainer.addEventListener('pointermove', (e) => {
+        if (!app.pipDragging) return;
+        const x = Math.max(0, Math.min(window.innerWidth - 48, e.clientX - app.pipDragOffset.x));
+        const y = Math.max(0, Math.min(window.innerHeight - 48, e.clientY - app.pipDragOffset.y));
+        app.pipPos.x = x;
+        app.pipPos.y = y;
+        pipContainer.style.left = x + 'px';
+        pipContainer.style.top = y + 'px';
+    });
+
+    pipContainer.addEventListener('pointerup', (e) => {
+        const wasDragging = app.pipDragging;
+        app.pipDragging = false;
+        // If it was a click (not drag), toggle PIP
+        const rect = pipContainer.getBoundingClientRect();
+        const dx = Math.abs(e.clientX - (rect.left + app.pipDragOffset.x));
+        const dy = Math.abs(e.clientY - (rect.top + app.pipDragOffset.y));
+        if (dx < 5 && dy < 5) {
+            togglePip();
+        }
+    });
+}
+
+// ---- Settings Handlers ----
+function initSettings() {
+    // Camera toggle
+    document.getElementById('toggleCamera').addEventListener('click', toggleCamera);
+    document.getElementById('btnFlipCamera').addEventListener('click', flipCamera);
+
+    // Confidence sliders
+    const detSlider = document.getElementById('sliderDetConf');
+    const trackSlider = document.getElementById('sliderTrackConf');
+    detSlider.addEventListener('input', () => {
+        app.detectionConf = parseFloat(detSlider.value);
+        document.getElementById('detConfVal').textContent = app.detectionConf.toFixed(2);
+        if (app.handsInstance) {
+            app.handsInstance.setOptions({ minDetectionConfidence: app.detectionConf });
+        }
+    });
+    trackSlider.addEventListener('input', () => {
+        app.trackingConf = parseFloat(trackSlider.value);
+        document.getElementById('trackConfVal').textContent = app.trackingConf.toFixed(2);
+        if (app.handsInstance) {
+            app.handsInstance.setOptions({ minTrackingConfidence: app.trackingConf });
+        }
+    });
+
+    // Smoothing slider
+    const smoothSlider = document.getElementById('sliderSmooth');
+    smoothSlider.addEventListener('input', () => {
+        app.smoothing = parseFloat(smoothSlider.value);
+        document.getElementById('smoothVal').textContent = app.smoothing.toFixed(2);
+    });
+
+    // Performance mode
+    const perfBtn = document.getElementById('btnPerfMode');
+    perfBtn.addEventListener('click', () => {
+        const modes = ['saver', 'balanced', 'performance'];
+        const labels = ['Battery Saver', 'Balanced', 'High Performance'];
+        const icons = ['fa-leaf', 'fa-bolt', 'fa-rocket'];
+        let idx = modes.indexOf(app.performanceMode);
+        idx = (idx + 1) % modes.length;
+        app.performanceMode = modes[idx];
+        perfBtn.innerHTML = `<i class="fa-solid ${icons[idx]} mr-1"></i> ${labels[idx]}`;
+
+        switch (app.performanceMode) {
+            case 'saver':
+                app.modelComplexity = 0; app.fpsCap = 15; break;
+            case 'balanced':
+                app.modelComplexity = 1; app.fpsCap = 0; break;
+            case 'performance':
+                app.modelComplexity = 1; app.fpsCap = 0; break;
+        }
+        if (app.handsInstance) {
+            app.handsInstance.setOptions({ modelComplexity: app.modelComplexity });
+        }
+        showToast(`Performance: ${labels[idx]}`);
+    });
+
+    // Theme buttons
+    document.querySelectorAll('.theme-btn').forEach(btn => {
+        btn.addEventListener('click', () => setTheme(btn.dataset.theme));
+    });
+}
+
+function openSettings() {
+    document.getElementById('settingsOverlay').classList.add('open');
+}
+function closeSettings() {
+    document.getElementById('settingsOverlay').classList.remove('open');
+}
+
+// ---- History UI ----
+function openHistory() {
+    document.getElementById('historyPanel').classList.add('open');
+}
+function closeHistory() {
+    document.getElementById('historyPanel').classList.remove('open');
+}
+
+// ---- Calculator Button Events ----
+function initCalcButtons() {
+    // Touch/click on calculator buttons
+    btnGrid.querySelectorAll('.calc-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            calcAction(btn.dataset.action);
+        });
+    });
+}
+
+// ---- Top Bar Button Events ----
+function initTopBar() {
+    document.getElementById('btnCamera').addEventListener('click', toggleCamera);
+    document.getElementById('btnHistory').addEventListener('click', openHistory);
+    document.getElementById('btnSettings').addEventListener('click', openSettings);
+    document.getElementById('historyBackdrop').addEventListener('click', closeHistory);
+    document.getElementById('btnCloseHistory').addEventListener('click', closeHistory);
+    document.getElementById('btnClearHistory').addEventListener('click', () => {
+        app.history = [];
+        renderHistory();
+        showToast('History cleared');
+    });
+    document.getElementById('settingsOverlay').addEventListener('click', (e) => {
+        if (e.target === document.getElementById('settingsOverlay')) closeSettings();
+    });
+}
+
+// ---- Initialize Everything ----
+function init() {
+    initCalcButtons();
+    initTopBar();
+    initPipDrag();
+    initSettings();
+    setTheme('dark');
+    updateDisplay();
+    updatePipVisuals();
+    updateCameraToggle();
+
+    // Start render loop
+    requestAnimationFrame(renderLoop);
+}
+
+// Run on DOM ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
+}
+</script>
+</body>
+</html>
